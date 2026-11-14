@@ -38,6 +38,23 @@ Without a prepared file, the app shows a setup error with a retry action. After 
 
 Inspection appears immediately after its event row/card. It remains open only while that event matches every filter; excluding it clears the selection, and reset always clears it. Closing restores focus to the inspect control; if active details disappear with their row, focus recovers to the inventory heading without stealing focus from a filter being edited. Whole-inventory counts do not change with filters.
 
+## Refresh source observations locally
+
+To acquire the selected Jolpica calendar and position-1 result evidence instead of using the saved export:
+
+```sh
+npm run acquire:local -- 2026-11-14
+npm run prepare:local -- .local-data/source-inventory-<printed-id>.json
+```
+
+Pass an explicit real cutoff date from 2015 onward, no later than today. The command requests each season from 2015 through the cutoff year, serially with at least one second between requests. It follows every calendar/winner page, checking offsets, stable totals, page limits, unique season/round keys and result/calendar identity agreement. HTTP errors, malformed/truncated pages, orphaned results, past events without results and results beyond the cutoff stop acquisition rather than inventing a held/cancelled classification or zero. A past cutoff is not an archival as-of query: current source results beyond it are rejected.
+
+Successful acquisition atomically saves a new owner-readable `.local-data/source-inventory-<id>.json`, printing its absolute path. Each candidate retains raw response bodies with SHA-256 hashes, source URLs, HTTP status and retrieval times. Previous candidates and `.local-data/inventory.json` are untouched; run preparation explicitly when ready. Keep earlier candidates to investigate corrections, independently reconcile changed facts, then prepare the chosen candidate. Matching pagination totals do not detect every upstream edit during acquisition.
+Malformed UTF-8 is rejected before JSON parsing or saving, so retained response text cannot silently differ from the bytes covered by its SHA-256 hash.
+
+This command does **not** acquire full classifications, qualifying/lap evidence, sprint results or inclusive overtakes; infer cancellations; certify canonical identities/layouts; or grant publication rights. It produces the same provisional input schema consumed by preparation. Jolpica's [data terms](https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md) declare CC BY-NC-SA 4.0; applicable attribution, modification/share-alike and upstream conditions still need assessment before public reuse. Raw candidates stay local and outside the browser root.
+
+
 ## Data and publication safety
 
 - The prepared metadata endpoint `/__local/inventory.json` exists **only in the loopback-bound development server**. It serves the local projection, not raw results, winner data, lap evidence or pass ledgers.
@@ -54,6 +71,7 @@ No deployment or paid service is configured. Committing or pushing this local ap
 
 - `app/src/research.ts`: shared projected-inventory decoder, source-evidence preparation, filter selection and source-record counts. This does not implement the full product's Publication or Analysis contracts.
 - `scripts/prepare-local.ts`: local input/atomic-output command.
+- `scripts/acquire-local.ts`: serial, paginated local Jolpica acquisition with retained evidence and immutable candidate files.
 - `app/src/main.tsx`, `app/src/styles.css`: browser experience and presentation.
 - `vite.config.ts`: app-root isolation, development-only inventory serving and static build.
 
@@ -68,5 +86,7 @@ npm run preview
 ```
 
 The deterministic Node suite covers projected-data rejection, source reconciliation, atomic-output preservation and preparation recovery. The Chromium acceptance suite exercises filter/inspection/reset/focus transitions and contradictory-projection rejection/retry at desktop and 390px widths. Browser fixtures are isolated synthetic metadata, never sporting observations or production data.
+
+Acquisition regressions run the real commands in isolated temporary projects, replacing only external HTTP and elapsed time. They cover paginated input through preparation, interrupted/contradictory source rejection, prior-file preservation and correction evidence retention. A separate actual-source run acquired 24 pages and prepared 256 source events (253 result-recorded, three future-scheduled) at cutoff 2026-11-14; these counts are source observations, not verified held-event or inclusive-overtake coverage.
 
 Also exercised with the actual saved snapshot: prepare-and-retry after a missing local file; retained/excluded selection transitions; desktop/mobile in both themes; adjacent inspection and unchanged font/theme tokens; raw-source HTTP 403; built-asset exclusion scan; production preview without local-inventory requests. These checks establish local research behavior, not historical accuracy, source rights or completion of the full pipeline.

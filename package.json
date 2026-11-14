@@ -6,6 +6,7 @@
   "engines": { "node": ">=22.12.0" },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "acquire:local": "tsx scripts/acquire-local.ts",
     "prepare:local": "tsx scripts/prepare-local.ts",
     "test": "node --import tsx --test scripts/*.test.ts",
     "typecheck": "tsc --noEmit",
