@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  decodeResearchInventory,
   selectEvents,
   summarizeInventory,
   type ResearchEvent,
@@ -14,28 +15,6 @@ type LoadState =
   | { status: 'ready'; inventory: ResearchInventory }
   | { status: 'error'; message: string };
 
-function isResearchEvent(value: unknown): value is ResearchEvent {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const event = value as Partial<ResearchEvent>;
-  const textFields = ['eventId', 'grandPrixName', 'venueSourceId', 'circuitName', 'country', 'date'] as const;
-  return textFields.every((field) => typeof event[field] === 'string' && event[field].length > 0)
-    && typeof event.season === 'number' && Number.isInteger(event.season)
-    && typeof event.round === 'number' && Number.isInteger(event.round) && event.round > 0
-    && event.sessionType === 'grand-prix-race'
-    && (event.state === 'result-recorded' || event.state === 'scheduled-future')
-    && event.layoutAssignment === 'unverified'
-    && event.inclusiveOvertakes === 'unverified'
-    && event.publicReuseApproval === 'unqualified';
-}
-
-function isResearchInventory(value: unknown): value is ResearchInventory {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const inventory = value as Partial<ResearchInventory>;
-  return typeof inventory.cutoff === 'string' && inventory.cutoff.length > 0
-    && inventory.qualification === 'provisional-source-inventory-not-release-approved'
-    && Array.isArray(inventory.limitations) && inventory.limitations.every((item) => typeof item === 'string')
-    && Array.isArray(inventory.events) && inventory.events.every(isResearchEvent);
-}
 
 const numberFormat = new Intl.NumberFormat('en');
 const dateFormat = new Intl.DateTimeFormat('en', {
@@ -77,10 +56,7 @@ function App() {
         if (contentType !== 'application/json') {
           throw new Error('The local endpoint did not return a JSON inventory.');
         }
-        const inventory: unknown = await response.json();
-        if (!isResearchInventory(inventory)) {
-          throw new Error('The local inventory has an unsupported or invalid format. Prepare it again from the source inventory.');
-        }
+        const inventory = decodeResearchInventory(await response.json());
         if (!controller.signal.aborted) setLoad({ status: 'ready', inventory });
       } catch (error: unknown) {
         if (!controller.signal.aborted) {
@@ -123,9 +99,8 @@ function App() {
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-copy">
             <p className="eyebrow"><span className="section-number">00</span> The evidence comes first</p>
-            <h1 id="hero-title">Understand the racing.<br /><span>Question the numbers.</span></h1>
-            <p className="hero-description">A local notebook for exploring the source record. Start with what is saved, inspect what is missing, and keep observations separate from conclusions.</p>
-            <a className="text-link" href="#inventory">Explore the inventory <span aria-hidden="true">↗</span></a>
+            <h1 id="hero-title">Explore the record.<br /><span>Find the evidence gaps.</span></h1>
+            <p className="hero-description">Filter saved GP source records, then inspect an event’s identity and what remains unverified. Research metadata, not racing analytics.</p>
           </div>
           <div className="hero-note">
             <span className="note-rule" aria-hidden="true" />
@@ -139,7 +114,7 @@ function App() {
           <span className="qualification-marker" aria-hidden="true">!</span>
           <div>
             <h2 id="qualification-title">Provisional inventory. Not verified analytics.</h2>
-            <p>Source records are observations, not an audited history. Circuit layouts and inclusive overtakes are unverified; public reuse rights are unqualified. This local app is not approved for publication.</p>
+            <p>Layouts and inclusive overtakes are unverified; reuse rights are unqualified. No sporting metrics or publication approval.</p>
           </div>
           <a href="#methodology">Read the boundaries <span aria-hidden="true">↗</span></a>
         </aside>
@@ -218,8 +193,20 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
     if (selected) detailHeading.current?.focus();
   }, [selected]);
 
+  function updateFilters(next: ResearchFilters) {
+    if (selected && !selectEvents(inventory, next).some((event) => event.eventId === selected.eventId)) {
+      if (detailHeading.current?.closest('section')?.contains(document.activeElement)) {
+        inventoryHeading.current?.focus();
+      }
+      setSelected(null);
+    }
+    setFilters(next);
+  }
+
   function resetFilters() {
-    setFilters({ season: defaultSeason, query: '', state: 'all' });
+    if (document.activeElement?.closest('.empty-state')) inventoryHeading.current?.focus();
+    setSelected(null);
+    updateFilters({ season: defaultSeason, query: '', state: 'all' });
   }
 
   function closeDetails() {
@@ -233,7 +220,7 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
       <div className="section-heading">
         <div>
           <p className="eyebrow"><span className="section-number">01</span> Source inventory</p>
-          <h2 id="inventory-title" ref={inventoryHeading} tabIndex={-1}>First, know the record.</h2>
+          <h2 id="inventory-title" ref={inventoryHeading} tabIndex={-1}>Which source records are saved?</h2>
         </div>
         <div className="cutoff-note">
           <span className="eyebrow">Saved-source cutoff</span>
@@ -242,24 +229,18 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
         </div>
       </div>
 
-      <div className="snapshot" aria-label="Coverage snapshot from the entire saved inventory">
-        <div className="snapshot-intro"><h3>Coverage snapshot</h3><p>Whole-inventory source observations.<br />Not verified sporting metrics.</p></div>
-        <div className="snapshot-value"><strong>{numberFormat.format(summary.resultRecorded)}</strong><span>Source result records</span></div>
-        <div className="snapshot-value"><strong>{numberFormat.format(summary.scheduledFuture)}</strong><span>Future scheduled at cutoff</span></div>
-        <div className="snapshot-value"><strong>{numberFormat.format(summary.seasons)}</strong><span>Seasons represented</span></div>
-      </div>
 
       <form className="filter-bar" onSubmit={(event) => event.preventDefault()} aria-label="Filter source inventory">
         <div className="filter-field season-filter">
           <label htmlFor="season">Season</label>
-          <select id="season" value={filters.season ?? 'all'} onChange={(event) => setFilters({ ...filters, season: event.target.value === 'all' ? null : Number(event.target.value) })}>
+          <select id="season" value={filters.season ?? 'all'} onChange={(event) => updateFilters({ ...filters, season: event.target.value === 'all' ? null : Number(event.target.value) })}>
             <option value="all">All saved seasons</option>
             {seasons.map((season) => <option key={season} value={season}>{season}</option>)}
           </select>
         </div>
         <div className="filter-field state-filter">
           <label htmlFor="event-state">Source state</label>
-          <select id="event-state" value={filters.state} onChange={(event) => setFilters({ ...filters, state: event.target.value as ResearchFilters['state'] })}>
+          <select id="event-state" value={filters.state} onChange={(event) => updateFilters({ ...filters, state: event.target.value as ResearchFilters['state'] })}>
             <option value="all">All source states</option>
             <option value="result-recorded">Result recorded</option>
             <option value="scheduled-future">Scheduled future at cutoff</option>
@@ -267,7 +248,7 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
         </div>
         <div className="filter-field search-filter">
           <label htmlFor="event-search">Find an event</label>
-          <input id="event-search" type="search" value={filters.query} placeholder="Grand Prix, circuit or country" onChange={(event) => setFilters({ ...filters, query: event.target.value })} />
+          <input id="event-search" type="search" value={filters.query} placeholder="Grand Prix, circuit or country" onChange={(event) => updateFilters({ ...filters, query: event.target.value })} />
         </div>
         <button type="button" className="reset-button" onClick={resetFilters}>Reset filters <span aria-hidden="true">↺</span></button>
       </form>
@@ -290,7 +271,8 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
             </tr></thead>
             <tbody role="rowgroup">
               {events.map((event) => (
-                <tr key={event.eventId} role="row" className={selected?.eventId === event.eventId ? 'selected-row' : undefined}>
+                <Fragment key={event.eventId}>
+                <tr role="row" className={selected?.eventId === event.eventId ? 'selected-row' : undefined}>
                   <td role="cell" data-label="Season / Round" className="round-cell"><span>{event.season}</span><span className="round-number">R{String(event.round).padStart(2, '0')}</span></td>
                   <td role="cell" data-label="Grand Prix / Circuit" className="event-cell"><strong>{event.grandPrixName}</strong><span>{event.circuitName} <span aria-hidden="true">·</span> {event.country}</span></td>
                   <td role="cell" data-label="Source date" className="date-cell"><time dateTime={event.date}>{displayDate(event.date)}</time></td>
@@ -310,6 +292,28 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
                     >Inspect <span aria-hidden="true">↗</span></button>
                   </td>
                 </tr>
+                {selected?.eventId === event.eventId && (
+                  <tr className="detail-row" role="row"><td colSpan={5} role="cell">
+                        <section id="event-details" className="event-details" aria-labelledby="detail-title">
+                          <div className="detail-header">
+                            <div><p className="eyebrow">Source record / {selected.season} / Round {selected.round}</p><h3 id="detail-title" ref={detailHeading} tabIndex={-1}>{selected.grandPrixName}</h3><p>{selected.circuitName} · {selected.country}</p></div>
+                            <button type="button" className="button-secondary" onClick={closeDetails}>Close details <span aria-hidden="true">×</span></button>
+                          </div>
+                          <dl className="detail-identities">
+                            <div><dt>Source event ID</dt><dd><code>{selected.eventId}</code></dd></div>
+                            <div><dt>Source venue ID</dt><dd><code>{selected.venueSourceId}</code></dd></div>
+                            <div><dt>Session / source date</dt><dd>Grand Prix race · {displayDate(selected.date)}</dd></div>
+                            <div><dt>State at saved cutoff</dt><dd>{selected.state === 'result-recorded' ? 'Result recorded' : 'Scheduled future'}</dd></div>
+                          </dl>
+                          <div className="evidence-grid">
+                            <div><span className="evidence-label">Circuit layout</span><strong>Unverified</strong><p>A venue identity does not establish the layout used at this event.</p></div>
+                            <div><span className="evidence-label">Inclusive overtakes</span><strong>Withheld · unverified</strong><p>No verified total under the inclusive definition. This is not a measured zero.</p></div>
+                            <div><span className="evidence-label">Public reuse</span><strong>Unqualified</strong><p>Reuse and public-display permissions have not been established.</p></div>
+                          </div>
+                        </section>
+                  </td></tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -322,26 +326,13 @@ function InventoryWorkspace({ inventory }: { inventory: ResearchInventory }) {
           <button type="button" className="button-secondary" onClick={resetFilters}>Reset filters</button>
         </div>
       )}
+      <div className="snapshot" aria-label="Coverage snapshot from the entire saved inventory">
+        <div className="snapshot-intro"><h3>Whole saved inventory</h3><p>Independent of the filters above.<br />Not verified sporting metrics.</p></div>
+        <div className="snapshot-value"><strong>{numberFormat.format(summary.resultRecorded)}</strong><span>Source result records</span></div>
+        <div className="snapshot-value"><strong>{numberFormat.format(summary.scheduledFuture)}</strong><span>Future scheduled at cutoff</span></div>
+        <div className="snapshot-value"><strong>{numberFormat.format(summary.seasons)}</strong><span>Seasons represented</span></div>
+      </div>
 
-      {selected && (
-        <section id="event-details" className="event-details" aria-labelledby="detail-title">
-          <div className="detail-header">
-            <div><p className="eyebrow">Source record / {selected.season} / Round {selected.round}</p><h3 id="detail-title" ref={detailHeading} tabIndex={-1}>{selected.grandPrixName}</h3><p>{selected.circuitName} · {selected.country}</p></div>
-            <button type="button" className="button-secondary" onClick={closeDetails}>Close details <span aria-hidden="true">×</span></button>
-          </div>
-          <dl className="detail-identities">
-            <div><dt>Source event ID</dt><dd><code>{selected.eventId}</code></dd></div>
-            <div><dt>Source venue ID</dt><dd><code>{selected.venueSourceId}</code></dd></div>
-            <div><dt>Session / source date</dt><dd>Grand Prix race · {displayDate(selected.date)}</dd></div>
-            <div><dt>State at saved cutoff</dt><dd>{selected.state === 'result-recorded' ? 'Result recorded' : 'Scheduled future'}</dd></div>
-          </dl>
-          <div className="evidence-grid">
-            <div><span className="evidence-label">Circuit layout</span><strong>Unverified</strong><p>A venue identity does not establish the layout used at this event.</p></div>
-            <div><span className="evidence-label">Inclusive overtakes</span><strong>Withheld · unverified</strong><p>No verified total under the inclusive definition. This is not a measured zero.</p></div>
-            <div><span className="evidence-label">Public reuse</span><strong>Unqualified</strong><p>Reuse and public-display permissions have not been established.</p></div>
-          </div>
-        </section>
-      )}
 
       <details className="limitations" open>
         <summary>Source limitations <span className="muted">/ Read before interpreting</span></summary>
