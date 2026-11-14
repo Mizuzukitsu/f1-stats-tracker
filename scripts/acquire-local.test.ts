@@ -51,8 +51,10 @@ function acquire(directory: string, scenario = 'valid') {
         total = 2; rows = [offset === 0 ? winner : { ...future, Results: winner.Results }];
       }
       if (scenario === 'correction') rows = rows.map(row => row.round === '1' ? { ...row, raceName: 'Corrected GP' } : row);
-      return new Response(JSON.stringify({ MRData: { limit: '1', offset: String(responseOffset), total: String(total),
-        RaceTable: { season: '2015', Races: rows } } }), { status: 200 });
+      const body = Buffer.from(JSON.stringify({ MRData: { limit: '1', offset: String(responseOffset), total: String(total),
+        RaceTable: { season: '2015', Races: rows } } }));
+      if (scenario === 'malformed-utf8' && offset === 1) body[body.indexOf('Example Circuit')] = 0xff;
+      return new Response(body, { status: 200 });
     };
   `;
   return spawnSync(process.execPath, [
@@ -101,6 +103,7 @@ test('paginated acquisition feeds real preparation without promoting source obse
 for (const [scenario, message] of [
   ['http', /HTTP 429/],
   ['empty', /empty page/],
+  ['malformed-utf8', /utf-8/i],
   ['duplicate', /duplicate season\/round/],
   ['changed-total', /total changed/],
   ['wrong-offset', /wrong page offset/],

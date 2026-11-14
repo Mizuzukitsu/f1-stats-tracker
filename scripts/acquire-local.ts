@@ -46,7 +46,7 @@ async function fetchRaces(season: number, endpoint: 'races' | 'results/1'): Prom
     });
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}; acquisition stopped, no candidate saved.`);
     const bytes = Buffer.from(await response.arrayBuffer());
-    const body = bytes.toString('utf8');
+    const body = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
     const data = record(record(JSON.parse(body) as unknown, url).MRData, `${url} MRData`);
     const total = count(data.total, `${url} total`);
     const limit = count(data.limit, `${url} limit`);
