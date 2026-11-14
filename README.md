@@ -44,7 +44,7 @@ Without a prepared file, the app shows a setup error with a retry action. After 
 - An unverified inclusive overtake total is withheld, never a measured zero. Venue identity does not establish the circuit layout. Public access is not reuse approval.
 - Competitive overtakes include first-lap/restart passes and exclude pit swaps, lapping/unlapping, penalties and noncompetitive incident/impaired-car gains. Existing candidate sources have not established that complete series.
 
-No deployment or paid service is configured. The GitHub repository is private; committing or pushing this local app base does not establish verified analytics, public-launch readiness or completion of the full product.
+No deployment or paid service is configured. Committing or pushing this local app base does not establish verified analytics, public-launch readiness or completion of the full product.
 
 ## Structure
 
