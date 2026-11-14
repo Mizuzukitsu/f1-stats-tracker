@@ -253,7 +253,7 @@ test('CLI preserves previous output after failed preparation and recovers throug
 
     await writeFile(input, JSON.stringify(sourceInventory()));
     const first = run();
-    assert.equal(first.status, 0, first.stderr || first.error?.message);
+    assert.equal(first.status, 0, first.stderr || String(first.error));
     assert.match(first.stdout, /1 source events across 1 seasons/);
     const previous = await readFile(destination, 'utf8');
     assert.deepEqual(decodeResearchInventory(JSON.parse(previous) as unknown), projectedInventory());
@@ -272,7 +272,7 @@ test('CLI preserves previous output after failed preparation and recovers throug
     ] as const) {
       await writeFile(input, content);
       const failed = run();
-      assert.equal(failed.status, 1, failed.stderr || failed.error?.message);
+      assert.equal(failed.status, 1, failed.stderr || String(failed.error));
       assert.match(failed.stderr, error);
       assert.equal(await readFile(destination, 'utf8'), previous);
       assert.deepEqual(await readdir(join(directory, '.local-data')), ['inventory.json']);
@@ -282,7 +282,7 @@ test('CLI preserves previous output after failed preparation and recovers throug
     recovered.limitations = ['Recovered synthetic research input; still not release approved.'];
     await writeFile(input, JSON.stringify(recovered));
     const recovery = run();
-    assert.equal(recovery.status, 0, recovery.stderr || recovery.error?.message);
+    assert.equal(recovery.status, 0, recovery.stderr || String(recovery.error));
     const latest = await readFile(destination, 'utf8');
     assert.notEqual(latest, previous);
     assert.deepEqual(decodeResearchInventory(JSON.parse(latest) as unknown), {
