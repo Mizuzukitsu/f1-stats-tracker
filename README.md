@@ -4,7 +4,7 @@ A local React/TypeScript research workspace for inspecting saved Formula 1 event
 
 ## Local app-base milestone
 
-Implemented: source-inventory preparation, season/state/text filtering, event inspection, explicit withheld evidence states, light/dark themes, keyboard focus handling and responsive presentation.
+Implemented: source-inventory preparation with shared producer/browser validation, season/state/text filtering, inline event inspection, explicit withheld evidence states, light/dark themes, keyboard focus handling and responsive presentation. Controls precede the clearly separate whole-inventory snapshot.
 
 This is **not the completed analytics dashboard or a public-launch candidate**. The saved product specification and tickets remain the authoritative full-product scope. Inclusive overtaking evidence, full historical layout/metric/calendar verification and applicable reuse/public-display rights remain unresolved. No ticket or publication gate is marked complete by this app base. No overtake, speed or driver-performance values are invented or derived from net positions.
 
@@ -20,6 +20,8 @@ npm run dev
 
 The preparation input is the actual provisional Jolpica inventory schema from the saved research folder, not an arbitrary result API response. It must retain its source records, summary and limitations. The command validates source identities, duplicate events, GP-only sessions, cutoff-relative states and qualification markers before atomically writing a minimal projection to ignored `.local-data/inventory.json`. A failed preparation leaves the previous prepared file intact. No source files are changed or downloaded.
 
+The browser decodes that projection with the same calendar-date, identity, uniqueness, session, cutoff/state and qualification rules as preparation. An externally replaced contradictory projection is rejected, not rendered. Source-evidence reconciliation remains preparation-only.
+
 For this retained integration worktree, the existing export is available with:
 
 ```sh
@@ -33,6 +35,8 @@ npm run dev -- --port 5187
 ```
 
 Without a prepared file, the app shows a setup error with a retry action. After successful preparation, retry without restarting the server. Theme and filters are session-only; there is no URL-sharing or saved-dashboard claim at this milestone.
+
+Inspection appears immediately after its event row/card. It remains open only while that event matches every filter; excluding it clears the selection, and reset always clears it. Closing restores focus to the inspect control; if active details disappear with their row, focus recovers to the inventory heading without stealing focus from a filter being edited. Whole-inventory counts do not change with filters.
 
 ## Data and publication safety
 
@@ -48,7 +52,7 @@ No deployment or paid service is configured. Committing or pushing this local ap
 
 ## Structure
 
-- `app/src/research.ts`: research projection, filter selection and source-record counts. This does not implement the full product's Publication or Analysis contracts.
+- `app/src/research.ts`: shared projected-inventory decoder, source-evidence preparation, filter selection and source-record counts. This does not implement the full product's Publication or Analysis contracts.
 - `scripts/prepare-local.ts`: local input/atomic-output command.
 - `app/src/main.tsx`, `app/src/styles.css`: browser experience and presentation.
 - `vite.config.ts`: app-root isolation, development-only inventory serving and static build.
@@ -56,9 +60,13 @@ No deployment or paid service is configured. Committing or pushing this local ap
 ## Verification
 
 ```sh
-npm run typecheck
+npm test
+npx playwright install chromium
+npm run test:browser
 npm run build
 npm run preview
 ```
 
-Exercised for this milestone: preparation of the actual saved snapshot; malformed/duplicate/session/date rejection and preservation of previous output; filter isolation; event inspection and focus restoration; empty-search/reset; missing-inventory/retry; desktop and 390px mobile in both themes; raw-source filesystem denial; production data exclusion. Smoke scenarios used temporary files, not synthetic production assets. These checks establish local app-base behavior, not historical accuracy, source rights or completion of the full pipeline.
+The deterministic Node suite covers projected-data rejection, source reconciliation, atomic-output preservation and preparation recovery. The Chromium acceptance suite exercises filter/inspection/reset/focus transitions and contradictory-projection rejection/retry at desktop and 390px widths. Browser fixtures are isolated synthetic metadata, never sporting observations or production data.
+
+Also exercised with the actual saved snapshot: prepare-and-retry after a missing local file; retained/excluded selection transitions; desktop/mobile in both themes; adjacent inspection and unchanged font/theme tokens; raw-source HTTP 403; built-asset exclusion scan; production preview without local-inventory requests. These checks establish local research behavior, not historical accuracy, source rights or completion of the full pipeline.
