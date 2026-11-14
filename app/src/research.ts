@@ -80,18 +80,17 @@ function validateSourceIdentity(
   source: RecordValue,
   event: Pick<ResearchEvent, 'season' | 'round' | 'grandPrixName' | 'venueSourceId' | 'date'>,
   path: string,
-): RecordValue {
+): void {
   equal(source.season, String(event.season), `${path}.season`);
   equal(source.round, String(event.round), `${path}.round`);
   equal(source.raceName, event.grandPrixName, `${path}.raceName`);
   equal(date(source.date, `${path}.date`), event.date, `${path}.date`);
   const circuit = record(source.Circuit, `${path}.Circuit`);
   equal(circuit.circuitId, event.venueSourceId, `${path}.Circuit.circuitId`);
-  return circuit;
 }
 
-/** Projects source evidence into local inventory metadata, never analytical observations. */
-export function prepareResearchInventory(raw: unknown): ResearchInventory {
+/** Validates the shared prepared-file meaning and strips everything except local metadata. */
+export function decodeResearchInventory(raw: unknown): ResearchInventory {
   const input = record(raw, 'inventory');
   const cutoff = date(input.cutoff, 'cutoff');
   const qualification = 'provisional-source-inventory-not-release-approved';
@@ -108,7 +107,6 @@ export function prepareResearchInventory(raw: unknown): ResearchInventory {
 
   const eventIds = new Set<string>();
   const identities = new Set<string>();
-  const seasonCounts = new Map<number, { calendarRows: number; resultRecorded: number; futureScheduled: number }>();
   const events = input.events.map((value: unknown, index: number): ResearchEvent => {
     const path = `events[${index}]`;
     const source = record(value, path);
@@ -140,16 +138,68 @@ export function prepareResearchInventory(raw: unknown): ResearchInventory {
       invalid(`${path}.date`, `scheduled-future date must be after inventory cutoff ${cutoff}`);
     }
 
-    const identityFields = { season, round, grandPrixName, venueSourceId, date: eventDate };
-    const race = record(source.sourceRace, `${path}.sourceRace`);
-    const circuit = validateSourceIdentity(race, identityFields, `${path}.sourceRace`);
-    const circuitName = text(circuit.circuitName, `${path}.sourceRace.Circuit.circuitName`);
-    const location = record(circuit.Location, `${path}.sourceRace.Circuit.Location`);
-    const country = text(location.country, `${path}.sourceRace.Circuit.Location.country`);
+    return {
+      eventId,
+      season,
+      round,
+      grandPrixName,
+      venueSourceId,
+      circuitName: text(source.circuitName, `${path}.circuitName`),
+      country: text(source.country, `${path}.country`),
+      date: eventDate,
+      sessionType: 'grand-prix-race',
+      state,
+      layoutAssignment: 'unverified',
+      inclusiveOvertakes: 'unverified',
+      publicReuseApproval: 'unqualified',
+    };
+  });
 
-    if (state === 'result-recorded') {
+  return { cutoff, qualification, limitations, events };
+}
+
+/** Reconciles Jolpica evidence before projecting metadata, never analytical observations. */
+export function prepareResearchInventory(raw: unknown): ResearchInventory {
+  const input = record(raw, 'inventory');
+  if (!Array.isArray(input.events) || input.events.length === 0) {
+    invalid('events', 'expected a nonempty array of source events');
+  }
+  const sources = input.events.map((value: unknown, index: number) => record(value, `events[${index}]`));
+  const inventory = decodeResearchInventory({
+    cutoff: input.cutoff,
+    qualification: input.qualification,
+    limitations: input.limitations,
+    events: sources.map((source, index) => {
+      const path = `events[${index}].sourceRace`;
+      const race = record(source.sourceRace, path);
+      const circuit = record(race.Circuit, `${path}.Circuit`);
+      const location = record(circuit.Location, `${path}.Circuit.Location`);
+      return {
+        eventId: source.eventId,
+        season: source.season,
+        round: source.round,
+        grandPrixName: source.grandPrixName,
+        venueSourceId: source.venueSourceId,
+        circuitName: circuit.circuitName,
+        country: location.country,
+        date: source.date,
+        sessionType: source.sessionType,
+        state: source.state,
+        layoutAssignment: source.layoutAssignment,
+        inclusiveOvertakes: source.inclusiveOvertakes,
+        publicReuseApproval: source.publicReuseApproval,
+      };
+    }),
+  });
+  const seasonCounts = new Map<number, { calendarRows: number; resultRecorded: number; futureScheduled: number }>();
+  inventory.events.forEach((event, index) => {
+    const source = sources[index]!;
+    const path = `events[${index}]`;
+    const race = record(source.sourceRace, `${path}.sourceRace`);
+    validateSourceIdentity(race, event, `${path}.sourceRace`);
+    if (event.state === 'result-recorded') {
       const winner = record(source.sourceWinnerResult, `${path}.sourceWinnerResult`);
-      validateSourceIdentity(winner, identityFields, `${path}.sourceWinnerResult`);
+      validateSourceIdentity(winner, event, `${path}.sourceWinnerResult`);
       if (!Array.isArray(winner.Results) || winner.Results.length === 0) {
         invalid(`${path}.sourceWinnerResult.Results`, 'result-recorded requires a nonempty winner result array');
       }
@@ -163,28 +213,11 @@ export function prepareResearchInventory(raw: unknown): ResearchInventory {
         invalid(`${path}.winnerCompletedLaps`, 'scheduled-future requires null, never an imputed lap count');
       }
     }
-
-    const counts = seasonCounts.get(season) ?? { calendarRows: 0, resultRecorded: 0, futureScheduled: 0 };
+    const counts = seasonCounts.get(event.season) ?? { calendarRows: 0, resultRecorded: 0, futureScheduled: 0 };
     counts.calendarRows += 1;
-    if (state === 'result-recorded') counts.resultRecorded += 1;
+    if (event.state === 'result-recorded') counts.resultRecorded += 1;
     else counts.futureScheduled += 1;
-    seasonCounts.set(season, counts);
-
-    return {
-      eventId,
-      season,
-      round,
-      grandPrixName,
-      venueSourceId,
-      circuitName,
-      country,
-      date: eventDate,
-      sessionType: 'grand-prix-race',
-      state,
-      layoutAssignment: 'unverified',
-      inclusiveOvertakes: 'unverified',
-      publicReuseApproval: 'unqualified',
-    };
+    seasonCounts.set(event.season, counts);
   });
 
   if (!Array.isArray(input.summary)) invalid('summary', 'expected source per-season counts');
@@ -206,7 +239,8 @@ export function prepareResearchInventory(raw: unknown): ResearchInventory {
     if (!summarySeasons.has(season)) invalid('summary', `missing source counts for season ${season}`);
   }
 
-  return { cutoff, qualification, limitations, events: events.sort(compareEvents) };
+  inventory.events.sort(compareEvents);
+  return inventory;
 }
 
 export function selectEvents(inventory: ResearchInventory, filters: ResearchFilters): ResearchEvent[] {
