@@ -8,6 +8,7 @@ import {
   type ResearchFilters,
   type ResearchInventory,
 } from './research';
+import { ClassificationWorkspace } from './classification-view';
 import './styles.css';
 
 type LoadState =
@@ -87,6 +88,7 @@ function App() {
         <span className="local-badge"><span aria-hidden="true" />Local research</span>
         <nav aria-label="Main navigation">
           <a href="#inventory">Inventory</a>
+          <a href="#classification">Classification</a>
           <a href="#methodology">Methodology</a>
         </nav>
         <div className="theme-control" role="group" aria-label="Color theme">
@@ -100,7 +102,7 @@ function App() {
           <div className="hero-copy">
             <p className="eyebrow"><span className="section-number">00</span> The evidence comes first</p>
             <h1 id="hero-title">Explore the record.<br /><span>Find the evidence gaps.</span></h1>
-            <p className="hero-description">Filter saved GP source records, then inspect an event’s identity and what remains unverified. Research metadata, not racing analytics.</p>
+            <p className="hero-description">Filter saved GP metadata and inspect an imported source classification, with identities and evidence gaps kept explicit. Local research, not verified racing analytics.</p>
           </div>
           <div className="hero-note">
             <span className="note-rule" aria-hidden="true" />
@@ -113,8 +115,8 @@ function App() {
         <aside className="qualification" aria-labelledby="qualification-title">
           <span className="qualification-marker" aria-hidden="true">!</span>
           <div>
-            <h2 id="qualification-title">Provisional inventory. Not verified analytics.</h2>
-            <p>Layouts and inclusive overtakes are unverified; reuse rights are unqualified. No sporting metrics or publication approval.</p>
+            <h2 id="qualification-title">Provisional research. Not verified analytics.</h2>
+            <p>Layouts and inclusive overtakes are unverified; reuse rights are unqualified. Source classifications are not sporting verification or publication approval.</p>
           </div>
           <a href="#methodology">Read the boundaries <span aria-hidden="true">↗</span></a>
         </aside>
@@ -139,10 +141,12 @@ function App() {
         )}
         {load.status === 'ready' && <InventoryWorkspace inventory={load.inventory} />}
 
+        <ClassificationWorkspace />
+
         <section id="methodology" className="methodology section-space" aria-labelledby="methodology-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow"><span className="section-number">02</span> Methodology</p>
+              <p className="eyebrow"><span className="section-number">03</span> Methodology</p>
               <h2 id="methodology-title">A record is a starting point.<br />Not a verdict.</h2>
             </div>
             <p className="section-description">The full research product remains blocked by historical coverage, evidence and reuse requirements. This workspace does not relax those gates.</p>
@@ -163,7 +167,7 @@ function App() {
             <article>
               <span className="method-index">03 / EVIDENCE</span>
               <h3>Unknown is never zero</h3>
-              <p>No overtake, speed or driver-performance metrics are published here. Unverified layouts cannot support same-layout comparisons, and a source venue ID is not a layout assignment.</p>
+              <p>Imported classifications are source observations, not verified driver-performance analytics. No inclusive-overtake or speed metrics are supplied. Unverified layouts cannot support same-layout comparisons, and a source venue ID is not a layout assignment.</p>
               <p>Inclusive historical evidence and data-specific public-display permissions must be established before verified analytics or publication. Missing evidence is not a measured zero.</p>
             </article>
           </div>

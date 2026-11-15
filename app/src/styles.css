@@ -197,6 +197,46 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .empty-state h3 { margin-top: 12px; font-size: 24px; letter-spacing: -0.6px; }
 .empty-state p { max-width: 520px; margin: 12px auto 20px; font-size: 12px; color: var(--muted); }
 
+.classification > .section-heading > button { flex-shrink: 0; }
+.classification button[aria-disabled="true"] { cursor: wait; opacity: 0.65; }
+.classification-event { margin-bottom: 22px; }
+.classification-event h3 { font-size: 27px; letter-spacing: -0.7px; margin-top: 9px; }
+.classification-event > p:last-child { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.classification .qualification h3 { font-size: 14px; line-height: 1.5; color: var(--accent-text); font-weight: 650; }
+.classification-unavailable { margin-top: 0; }
+.classification-unavailable h3 { font-size: 24px; }
+.classification-notes { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+.classification-table th { width: auto; padding: 15px 10px; }
+.classification-table th:first-child { width: 26%; }
+.classification-table th:nth-child(2), .classification-table th:nth-child(3), .classification-table th:nth-child(4) { width: 13%; }
+.classification-table th:nth-child(5), .classification-table th:nth-child(6) { width: 7%; }
+.classification-table th:last-child { width: 21%; }
+.classification-table td { padding: 17px 10px; vertical-align: top; }
+.classification-driver > strong, .classification-driver > span, .classification-driver > code { display: block; }
+.classification-driver > strong { font-size: 13px; }
+.classification-driver > span, .classification-driver > code, .classification-subtext { color: var(--muted); font-size: 10px; }
+.classification-driver > span, .classification-driver > code { margin-top: 5px; }
+.classification-subtext { display: block; margin-top: 5px; }
+.classification-evidence { margin-top: 24px; }
+.classification-subheading { margin-top: 16px; font-size: 12px; font-weight: 600; }
+.classification-provenance .detail-identities { margin-top: 0; border-top: 0; padding-block: 20px 0; }
+
+@media (max-width: 1050px) {
+  .classification-table th, .classification-table td { padding-inline: 7px; }
+  .classification-table th { font-size: 8px; letter-spacing: 0.5px; }
+}
+
+@media (max-width: 760px) {
+  .classification > .section-heading { flex-direction: column; align-items: start; }
+  .classification-table td { padding: 9px 0; }
+  .classification-table tbody tr { column-gap: 16px; }
+  .classification-driver { grid-column: 1 / -1; border-bottom: 1px solid var(--border); padding-bottom: 17px !important; margin-bottom: 6px; }
+  .classification-driver > strong { font-size: 16px; }
+  .classification-driver > code, .classification-driver > span, .classification-subtext { font-size: 11px; }
+  .classification-table td:last-child { grid-column: 1 / -1; }
+  .classification .qualification h3 { font-size: 13px; }
+}
+
 @media (min-width: 1450px) {
   .hero { padding-block: 32px 28px; }
 }
