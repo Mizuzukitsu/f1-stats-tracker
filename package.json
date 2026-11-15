@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "acquire:local": "tsx scripts/acquire-local.ts",
+    "import:f1db": "tsx scripts/import-f1db.ts",
     "prepare:local": "tsx scripts/prepare-local.ts",
     "test": "node --import tsx --test scripts/*.test.ts",
     "typecheck": "tsc --noEmit",

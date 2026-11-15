@@ -1,6 +1,6 @@
 # F1 Field Notes
 
-A local React/TypeScript research workspace for inspecting saved Formula 1 event identities and source-qualification gaps. Unofficial, noncommercial, read-only; no accounts, trackers or upstream requests from visitors.
+A local React/TypeScript research workspace for inspecting saved Formula 1 event identities, full GP source classifications and source-qualification gaps. Unofficial, noncommercial, read-only; no accounts, trackers or upstream requests from visitors.
 
 ## Local app-base milestone
 
@@ -38,6 +38,45 @@ Without a prepared file, the app shows a setup error with a retry action. After 
 
 Inspection appears immediately after its event row/card. It remains open only while that event matches every filter; excluding it clears the selection, and reset always clears it. Closing restores focus to the inspect control; if active details disappear with their row, focus recovers to the inventory heading without stealing focus from a filter being edited. Whole-inventory counts do not change with filters.
 
+## Inspect a full GP from F1DB
+
+This implements **issue #15, section 1 only**, not the analytical comparison dashboard or the remaining six sections. The existing Jolpica metadata commands remain independent.
+
+```sh
+npm run import:f1db -- 2015 1
+npm run dev -- --port 5190
+```
+
+Open `http://127.0.0.1:5190/#classification`. The importer downloads the explicitly pinned [F1DB v2026.20.0 release](https://github.com/f1db/f1db/releases/tag/v2026.20.0), not `latest`, and selects the supplied season/round. Node 22.12+ and the platform `tar` executable are required. No database, extra package or credentials are needed.
+
+The command validates the package version and bundled schema identity, then reconciles the GP's entire `raceResults` against separate `startingGridPositions` and `qualifyingResults` by driver and constructor. For source-declared `SPRINT_RACE` weekends, embedded/grid qualification fields refer to sprint results: they are checked against `sprintRaceResults`, while displayed qualifying positions come only from the separate GP qualifying session. Cross-session differences are not treated as conflicting observations of the same session. Duplicate/unknown identities, inconsistent same-session positions, missing required fields or participants, incomplete result order, absent winner, bad HTTP responses, invalid archives and malformed UTF-8/JSON are rejected. Only a complete accepted projection atomically replaces `.local-data/classification.json`; failures leave the previous usable classification and metadata inventory unchanged.
+
+Every attempt retains private evidence under `.local-data/f1db/<printed-id>/`: the exact original archive, licence and README response bytes, extracted package/schema/JSON, selected source event, reconciliation observations, prepared projection and a manifest with pinned URLs, acquisition times and SHA-256 hashes. Rejected attempts retain whatever was acquired and a rejection reason; interrupted attempts can leave partial evidence but cannot publish a partial revision. Candidates are never overwritten. Evidence files are owner-read-only (`0400`), candidate directories owner-read/execute (`0500`); ordinary reruns create new candidates rather than modifying sealed evidence.
+
+After import, use **Reload GP classification** (or **Retry GP classification** after an error), without restarting the server. A missing metadata inventory does not prevent GP inspection, and a missing classification does not disable metadata inspection. To revisit another event or recheck the pinned source, rerun the command with its season/round. For a correction, retain and compare the prior candidate's manifest/reconciliation before accepting the new observations; source corrections are not independently verified or automatically approved for publication. A new source release requires an explicit code/schema review, not a moving download URL.
+
+### Source-to-field qualification
+
+Observed download: release `v2026.20.0`, published 2026-11-09; `f1db-json-single.tgz` contains `package/data/f1db.json` and schema `https://www.f1db.com/schema/v6.5.0/single/f1db.schema.json`. Acquisition is three serial HTTP downloads (archive, pinned licence, pinned README); the static release archive has no API pagination or per-visitor dependency. A network, HTTP or parsing failure stops the import without retries.
+
+| Browser observation | Retained F1DB evidence | Qualification / meaning |
+| --- | --- | --- |
+| Season, event, named GP, venue, session | `seasons`, `races.id/year/round`, `grandsPrix`, `circuits`; namespaced source IDs and GP-race session identity | Source identity reconciliation, not independent historical verification |
+| Driver and constructor participation | `raceResults.driverId/constructorId`, joined to source registries | Constructor at this GP; racing number is not driver identity |
+| Classification and status | `positionNumber`, exact `positionText`, separate `reasonRetired` | DNF/DNS/DNP/DSQ and other source codes retained; numeric classification does not prove finished status |
+| Actual grid and qualifying position | Embedded result positions checked against separate grid/qualifying rows and the declared sprint format where applicable | GP qualifying is never replaced by sprint classification; `PL` has no numbered grid position; source-null omissions remain unknown |
+| Laps and GP points | `raceResults.laps/points` | Completed-lap counts and GP points, not season totals; explicit zero retained, source-null unknown |
+| Layout label | `races.circuitLayoutId`, checked against the source circuit's layout IDs | Source claim only; historical geometry and same-layout eligibility remain unverified |
+| Timing, speeds and inclusive overtakes | Not included in this projection | Unavailable/withheld, never inferred from classification or substituted from sprints |
+
+The acquisition cutoff is the UTC download date, not an archival-as-of claim. The browser receives one coherent revision with definitions, units, limitations and source hashes; it rejects malformed replacement projections through the same decoder as the importer. It never receives the raw archive or private candidate files.
+
+**Attribution and rights:** F1DB and its contributors declare [CC BY 4.0](https://raw.githubusercontent.com/f1db/f1db/v2026.20.0/LICENSE). The prepared record credits F1DB, links the source and licence, identifies conversion to a single-event projection and disclaims endorsement. Retain attribution, licence/warranty notices and modification information. This source statement covers rights the licensor can grant; it is not independent clearance of all upstream, trademark or public-display conditions. No Jolpica observations are combined into this classification revision. Applicable combination/reuse conditions remain to be assessed before later sections or publication.
+
+Actual-source proof: `npm run import:f1db -- 2015 1` imported 20 Australian GP result entries and reconciled 17 actual-grid and 18 qualifying rows. The original archive SHA-256 is `ca32fd3b1f2a82ab7f23d977b8ea34419c4734d61787f61cbeae82c07ffe24c8`; all nine retained evidence hashes were checked. `npm run import:f1db -- 2021 10` also imported a real sprint-format British GP with 20 entries; browser inspection confirmed its sprint-derived grid and separate GP qualifying positions remain distinct. Actual UI checks covered retirement reasons, recorded zero laps, source-null points, DNS/DNP omissions, desktop/mobile and both themes, keyboard reload/focus and narrow provenance. Raw-archive access was denied, metadata remained usable, and the production browser made no local-data requests or displayed source rows. These are real local-research checks, not a complete historical audit; candidates and screenshots remain local.
+
+**Still blocked:** issue #15 sections 2–7, qualified publication under #3/#4, historical layout/length verification, inclusive overtaking history, source-combination/reuse clearance and the three-season analytical handoff. No chart, verified speed, complete-history or public-launch claim is made here.
+
 ## Refresh source observations locally
 
 To acquire the selected Jolpica calendar and position-1 result evidence instead of using the saved export:
@@ -57,7 +96,7 @@ This command does **not** acquire full classifications, qualifying/lap evidence,
 
 ## Data and publication safety
 
-- The prepared metadata endpoint `/__local/inventory.json` exists **only in the loopback-bound development server**. It serves the local projection, not raw results, winner data, lap evidence or pass ledgers.
+- Prepared endpoints `/__local/inventory.json` (metadata) and `/__local/classification.json` (single-GP research classification) exist **only in the loopback-bound development server**. Neither serves raw archives, private evidence, lap telemetry or pass ledgers.
 - The Vite browser root is `app/`; filesystem access is restricted to that root. Raw source folders stay outside it. Do not expose the development server to a network.
 - Production code does not request the local endpoint. `npm run build` creates an application shell in `dist/` with an explicit local-inventory-unavailable state, not a publishable historical dataset. `npm run preview` can inspect that deliberate data-free behavior.
 - `.local-data/`, `local/`, dependencies, output, environment files and logs are ignored. Keep candidate files, credentials, private provenance and permission agreements out of Git and public assets.
@@ -72,6 +111,8 @@ No deployment or paid service is configured. Committing or pushing this local ap
 - `app/src/research.ts`: shared projected-inventory decoder, source-evidence preparation, filter selection and source-record counts. This does not implement the full product's Publication or Analysis contracts.
 - `scripts/prepare-local.ts`: local input/atomic-output command.
 - `scripts/acquire-local.ts`: serial, paginated local Jolpica acquisition with retained evidence and immutable candidate files.
+- `scripts/import-f1db.ts`, `app/src/classification.ts`: pinned F1DB acquisition, source reconciliation, immutable evidence and shared prepared-classification validation.
+- `app/src/classification-view.tsx`: independent GP inspection, explicit unknown/status distinctions and provenance.
 - `app/src/main.tsx`, `app/src/styles.css`: browser experience and presentation.
 - `vite.config.ts`: app-root isolation, development-only inventory serving and static build.
 
