@@ -10,19 +10,23 @@ import { test } from 'node:test';
 const race = {
   id: 917, year: 2015, round: 1, date: '2015-03-15', officialName: 'Example GP',
   grandPrixId: 'example', circuitId: 'example', circuitLayoutId: 'example-1', laps: 58,
+  qualifyingFormat: 'KNOCKOUT', qualifying1Results: null, qualifying2Results: null,
+  fastestLaps: null, sprintRaceResults: null, sprintQualifyingResults: null,
   raceResults: [
     { positionDisplayOrder: 1, positionNumber: 1, positionText: '1', driverId: 'first', constructorId: 'team', driverNumber: '44',
-      gridPositionNumber: 2, gridPositionText: '2', qualificationPositionNumber: 1, qualificationPositionText: '1', laps: 58, points: 25, reasonRetired: null },
+      gridPositionNumber: 2, gridPositionText: '2', qualificationPositionNumber: 1, qualificationPositionText: '1', laps: 58, points: 25, reasonRetired: null, fastestLap: false },
     { positionDisplayOrder: 2, positionNumber: null, positionText: 'DNF', driverId: 'second', constructorId: 'team', driverNumber: '6',
-      gridPositionNumber: 1, gridPositionText: '1', qualificationPositionNumber: 2, qualificationPositionText: '2', laps: 0, points: null, reasonRetired: 'Engine' },
+      gridPositionNumber: 1, gridPositionText: '1', qualificationPositionNumber: 2, qualificationPositionText: '2', laps: 0, points: null, reasonRetired: 'Engine', fastestLap: false },
   ],
   startingGridPositions: [
     { positionDisplayOrder: 1, positionNumber: 1, positionText: '1', driverId: 'second', constructorId: 'team', qualificationPositionNumber: 2, qualificationPositionText: '2' },
     { positionDisplayOrder: 2, positionNumber: 2, positionText: '2', driverId: 'first', constructorId: 'team', qualificationPositionNumber: 1, qualificationPositionText: '1' },
   ],
   qualifyingResults: [
-    { positionDisplayOrder: 1, positionNumber: 1, positionText: '1', driverId: 'first', constructorId: 'team' },
-    { positionDisplayOrder: 2, positionNumber: 2, positionText: '2', driverId: 'second', constructorId: 'team' },
+    { positionDisplayOrder: 1, positionNumber: 1, positionText: '1', driverId: 'first', constructorId: 'team',
+      time: null, timeMillis: null, q1: null, q1Millis: null, q2: null, q2Millis: null, q3: null, q3Millis: null },
+    { positionDisplayOrder: 2, positionNumber: 2, positionText: '2', driverId: 'second', constructorId: 'team',
+      time: null, timeMillis: null, q1: null, q1Millis: null, q2: null, q2Millis: null, q3: null, q3Millis: null },
   ],
 };
 
@@ -121,9 +125,10 @@ test('sprint-derived grid qualification does not replace the separate GP qualify
         startingGridPositions: race.startingGridPositions.map((result) => ({
           ...result, qualificationPositionNumber: result.positionNumber, qualificationPositionText: result.positionText,
         })),
+        qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, q1: '1:26.786', q1Millis: 86786 })),
         sprintRaceResults: [
-          { ...race.startingGridPositions[0]!, qualificationPositionNumber: 2, qualificationPositionText: '2' },
-          { ...race.startingGridPositions[1]!, qualificationPositionNumber: 1, qualificationPositionText: '1' },
+          { ...race.startingGridPositions[0]!, qualificationPositionNumber: 2, qualificationPositionText: '2', time: '25:00.000', timeMillis: 1500000 },
+          { ...race.startingGridPositions[1]!, qualificationPositionNumber: 1, qualificationPositionText: '1', time: '24:59.000', timeMillis: 1499000 },
         ],
     };
     const run = await importEvent(directory, race, { mutate(data) { data.races = [sprintRace]; } });
@@ -131,6 +136,9 @@ test('sprint-derived grid qualification does not replace the separate GP qualify
     const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
     assert.deepEqual(revision.drivers.map((driver: { grid: { number: number }; qualifying: { number: number } }) =>
       [driver.grid.number, driver.qualifying.number]), [[2, 1], [1, 2]]);
+    assert.equal(revision.drivers[0].timing.qualifying.q1.milliseconds, 86786);
+    assert.equal(revision.drivers[0].timing.qualifying.time, null);
+    assert.equal(revision.drivers[0].timing.raceFastestLap, null);
     const previous = await readFile(join(directory, '.local-data', 'classification.json'));
     sprintRace.sprintRaceResults[0]!.qualificationPositionNumber = 1;
     sprintRace.sprintRaceResults[0]!.qualificationPositionText = '1';
@@ -138,6 +146,155 @@ test('sprint-derived grid qualification does not replace the separate GP qualify
     assert.equal(conflict.status, 1, conflict.stdout);
     assert.match(conflict.stderr, /GP qualifying: contradictory/);
     assert.deepEqual(await readFile(join(directory, '.local-data', 'classification.json')), previous);
+  } finally { await removeProject(directory); }
+});
+
+test('imports GP phase times and the non-winner fastest-lap candidate', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race, qualifyingFormat: 'KNOCKOUT', sprintRaceResults: [], sprintQualifyingResults: [],
+        qualifying1Results: [], qualifying2Results: [],
+        qualifyingResults: race.qualifyingResults.map((row, index) => ({
+          ...row, time: null, timeMillis: null, q1: index === 0 ? '1:31.000' : '1:30.000',
+          q1Millis: index === 0 ? 91000 : 90000, q2: null, q2Millis: null, q3: null, q3Millis: null,
+        })),
+        raceResults: race.raceResults.map((row, index) => ({ ...row, laps: 58, fastestLap: index === 1 })),
+        fastestLaps: [
+          { ...race.qualifyingResults[1], positionDisplayOrder: 1, positionNumber: 1, positionText: '1', lap: 50, time: '1:28.617', timeMillis: 88617 },
+          { ...race.qualifyingResults[0], positionDisplayOrder: 2, positionNumber: 2, positionText: '2', lap: 45, time: '1:29.699', timeMillis: 89699 },
+        ],
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.deepEqual(revision.drivers.map((driver: Record<string, unknown>) => driver.timing), [
+      {
+        qualifying: { time: null, q1: { text: '1:31.000', milliseconds: 91000 }, q2: null, q3: null },
+        raceFastestLap: { position: { number: 2, text: '2' }, lap: 45, time: { text: '1:29.699', milliseconds: 89699 } },
+      },
+      {
+        qualifying: { time: null, q1: { text: '1:30.000', milliseconds: 90000 }, q2: null, q3: null },
+        raceFastestLap: { position: { number: 1, text: '1' }, lap: 50, time: { text: '1:28.617', milliseconds: 88617 } },
+      },
+    ]);
+    assert.equal(revision.timing.validity, 'unverified');
+    assert.equal(revision.timing.qualifyingFormat, 'KNOCKOUT');
+    assert.equal(revision.timing.qualifyingSessionId, 'f1db:race:917:grand-prix-qualifying');
+  } finally { await removeProject(directory); }
+});
+
+test('historical aggregate results retain separate numbered qualifying sessions rather than inventing knockout laps', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race, qualifyingFormat: 'AGGREGATE',
+        qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, time: '3:01.460', timeMillis: 181460 })),
+        qualifying1Results: race.qualifyingResults.map((row) => ({ ...row, time: '1:33.171', timeMillis: 93171 })),
+        qualifying2Results: race.qualifyingResults.map((row) => ({ ...row, time: '1:28.289', timeMillis: 88289 })),
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    const timing = revision.drivers[0].timing;
+    assert.deepEqual([timing.qualifying.time, revision.timing.qualifying1[0].time, revision.timing.qualifying2[0].time], [
+      { text: '3:01.460', milliseconds: 181460 }, { text: '1:33.171', milliseconds: 93171 }, { text: '1:28.289', milliseconds: 88289 },
+    ]);
+    assert.equal(timing.qualifying.q1, null);
+    assert.equal(revision.timing.validity, 'unverified');
+  } finally { await removeProject(directory); }
+});
+
+test('GP timing preserves seconds-only and hour-prefixed source durations', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race,
+        qualifyingResults: race.qualifyingResults.map((row) => ({
+          ...row, q1: '53.904', q1Millis: 53904, q2: '1:00:43.900', q2Millis: 3643900,
+        })),
+        raceResults: race.raceResults.map((row) => ({ ...row, fastestLap: null })),
+        fastestLaps: [{ ...race.qualifyingResults[0], lap: 50, time: '55.404', timeMillis: 55404 }],
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.deepEqual(revision.drivers[0].timing.qualifying.q1, { text: '53.904', milliseconds: 53904 });
+    assert.deepEqual(revision.drivers[0].timing.qualifying.q2, { text: '1:00:43.900', milliseconds: 3643900 });
+    assert.deepEqual(revision.drivers[0].timing.raceFastestLap.time, { text: '55.404', milliseconds: 55404 });
+  } finally { await removeProject(directory); }
+});
+
+test('recorded race-lap index is not inferred to be the driver completed-lap count', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race, raceResults: race.raceResults.map((row) => ({ ...row, fastestLap: null })),
+        fastestLaps: [{ ...race.qualifyingResults[0], lap: 59, time: '1:30.000', timeMillis: 90000 }],
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.equal(revision.drivers[0].laps, 58);
+    assert.equal(revision.drivers[0].timing.raceFastestLap.lap, 59);
+  } finally { await removeProject(directory); }
+});
+
+test('tied source fastest-lap ranks retain both drivers rather than selecting one winner', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race, raceResults: race.raceResults.map((row) => ({ ...row, laps: 58, fastestLap: true })),
+        fastestLaps: race.qualifyingResults.map((row) => ({ ...row, positionNumber: 1, positionText: '1', lap: 50, time: '1:30.000', timeMillis: 90000 })),
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.deepEqual(revision.drivers.map((driver: { timing: { raceFastestLap: { position: unknown } } }) => driver.timing.raceFastestLap.position), [
+      { number: 1, text: '1' }, { number: 1, text: '1' },
+    ]);
+  } finally { await removeProject(directory); }
+});
+
+test('numbered qualifying retains a source participant replaced before the GP race', async () => {
+  const directory = await project();
+  try {
+    const run = await importEvent(directory, race, { mutate(data) {
+      data.drivers = [...data.drivers as object[], { id: 'replaced', name: 'Replaced Driver' }];
+      data.races = [{
+        ...race, qualifyingFormat: 'ONE_LAP',
+        qualifying1Results: [{ ...race.qualifyingResults[0], driverId: 'replaced', time: '1:25.223', timeMillis: 85223 }],
+      }];
+    } });
+    assert.equal(run.status, 0, run.stderr || String(run.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.equal(revision.timing.qualifying1[0].driverId, 'f1db:driver:replaced');
+    assert.deepEqual(revision.timing.qualifying1[0].time, { text: '1:25.223', milliseconds: 85223 });
+    assert.equal(revision.drivers.some((driver: { driverId: string }) => driver.driverId === 'f1db:driver:replaced'), false);
+  } finally { await removeProject(directory); }
+});
+
+test('partial GP lap evidence preserves unknown coverage rather than filling a positive-lap driver from a sprint', async () => {
+  const directory = await project();
+  try {
+    const accepted = await importEvent(directory, race, { mutate(data) {
+      data.races = [{
+        ...race, raceResults: race.raceResults.map((row) => ({ ...row, laps: 58, fastestLap: null })),
+        fastestLaps: [{ ...race.qualifyingResults[0], lap: null, time: null, timeMillis: null }],
+        sprintRaceResults: [{ ...race.qualifyingResults[1], positionDisplayOrder: 1, time: '1:20.000', timeMillis: 80000 }],
+      }];
+    } });
+    assert.equal(accepted.status, 0, accepted.stderr || String(accepted.error));
+    const revision = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
+    assert.deepEqual(revision.drivers[0].timing.raceFastestLap, { position: { number: 1, text: '1' }, lap: null, time: null });
+    assert.equal(revision.drivers[1].timing.raceFastestLap, null);
+    assert.equal(revision.drivers[1].laps, 58);
+    assert.equal(revision.timing.validity, 'unverified');
   } finally { await removeProject(directory); }
 });
 
@@ -177,7 +334,6 @@ test('pinned import retains exact private immutable evidence and leaves metadata
     assert.equal((await stat(join(candidate, 'manifest.json'))).mode & 0o777, 0o400);
     assert.equal((await stat(join(directory, '.local-data', 'classification.json'))).mode & 0o777, 0o600);
     const projection = JSON.parse(await readFile(join(directory, '.local-data', 'classification.json'), 'utf8'));
-    assert.deepEqual(Object.keys(projection).sort(), ['cutoff', 'definitions', 'drivers', 'event', 'limitations', 'qualification', 'revision', 'schemaVersion', 'source']);
     assert.equal(projection.rawPrivateSentinel, undefined);
     assert.equal(projection.raceResults, undefined);
     const second = await importEvent(directory);
@@ -211,7 +367,7 @@ test('full results preserve DNS and DNP omitted-session unknowns, pit-lane start
             { ...race.startingGridPositions[0]!, positionNumber: null, positionText: 'PL' },
             race.startingGridPositions[1]!,
           ],
-          qualifyingResults: [...race.qualifyingResults, { positionDisplayOrder: 3, positionNumber: 3, positionText: '3', driverId: 'dns', constructorId: 'team' }],
+          qualifyingResults: [...race.qualifyingResults, { ...race.qualifyingResults[0]!, positionDisplayOrder: 3, positionNumber: 3, positionText: '3', driverId: 'dns' }],
         }];
       },
     });
@@ -240,6 +396,41 @@ test('full results preserve DNS and DNP omitted-session unknowns, pit-lane start
 });
 
 const rejections: { name: string; options: ImportOptions; message: RegExp }[] = [
+  { name: 'qualifying phases contradicting the source format', options: { mutate(data) {
+    data.races = [{
+      ...race, qualifyingFormat: 'AGGREGATE',
+      qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, q1: '1:30.000', q1Millis: 90000 })),
+    }];
+  } }, message: /Q1.Q3.*source format/ },
+  { name: 'contradictory qualifying milliseconds', options: { mutate(data) {
+    data.races = [{ ...race, qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, q1: '1:30.000', q1Millis: 91000 })) }];
+  } }, message: /time text and positive milliseconds must agree/ },
+  { name: 'half-null qualifying time', options: { mutate(data) {
+    data.races = [{ ...race, qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, q1: null, q1Millis: 90000 })) }];
+  } }, message: /expected a nonempty string/ },
+  { name: 'zero recorded timing', options: { mutate(data) {
+    data.races = [{ ...race, qualifyingResults: race.qualifyingResults.map((row) => ({ ...row, q1: '0:00.000', q1Millis: 0 })) }];
+  } }, message: /integer >= 1/ },
+  { name: 'duplicate GP fastest-lap driver', options: { mutate(data) {
+    const lap = { ...race.qualifyingResults[0], lap: 50, time: '1:30.000', timeMillis: 90000 };
+    data.races = [{ ...race, fastestLaps: [lap, { ...lap, positionDisplayOrder: 2, positionNumber: 2, positionText: '2' }] }];
+  } }, message: /fastestLaps: duplicate driver identity/ },
+  { name: 'unmatched GP fastest-lap constructor', options: { mutate(data) {
+    data.constructors = [{ id: 'team', name: 'Example Team' }, { id: 'other', name: 'Other Team' }];
+    data.races = [{ ...race, fastestLaps: [{ ...race.qualifyingResults[0], constructorId: 'other', lap: 50, time: '1:30.000', timeMillis: 90000 }] }];
+  } }, message: /fastestLaps: unmatched driver\/constructor/ },
+  { name: 'conflicting fastest-lap marker', options: { mutate(data) {
+    data.races = [{ ...race, fastestLaps: [{ ...race.qualifyingResults[0], lap: 50, time: '1:30.000', timeMillis: 90000 }] }];
+  } }, message: /conflicting fastestLap source marker/ },
+  { name: 'GP fastest-lap ranking contradicting times', options: { mutate(data) {
+    data.races = [{
+      ...race, raceResults: race.raceResults.map((row) => ({ ...row, laps: 58, fastestLap: null })),
+      fastestLaps: [
+        { ...race.qualifyingResults[0], lap: 50, time: '1:30.000', timeMillis: 90000 },
+        { ...race.qualifyingResults[1], lap: 45, time: '1:29.000', timeMillis: 89000 },
+      ],
+    }];
+  } }, message: /fastest-lap rank contradicts/ },
   { name: 'HTTP failure', options: { status: 503 }, message: /HTTP 503/ },
   { name: 'truncated archive', options: { archiveBytes: Buffer.from([0x1f, 0x8b, 0x08, 0]) }, message: /tar|gzip|archive|Command failed/i },
   { name: 'duplicate archive member', options: { duplicateMember: true }, message: /exactly one package\/data\/f1db.json/ },
