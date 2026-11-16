@@ -93,7 +93,7 @@ function sourcePosition(row: Row, numberKey: string, textKey: string, context: s
   return { number, text: result };
 }
 
-function participantRows(value: unknown, context: string, drivers: Map<string, Row>, constructors: Map<string, Row>): Map<string, Row> {
+function participantRows(value: unknown, context: string, drivers: Map<string, Row>, constructors: Map<string, Row>, allowTiedPositions = false): Map<string, Row> {
   const result = new Map<string, Row>();
   const orders = new Set<number>();
   const positions = new Set<number>();
@@ -107,7 +107,7 @@ function participantRows(value: unknown, context: string, drivers: Map<string, R
     orders.add(order);
     const position = sourcePosition(row, 'positionNumber', 'positionText', context)!;
     if (position.number !== null) {
-      if (positions.has(position.number)) throw new Error(`${context}: duplicate numeric position ${position.number}.`);
+      if (!allowTiedPositions && positions.has(position.number)) throw new Error(`${context}: duplicate numeric position ${position.number}.`);
       positions.add(position.number);
     }
     result.set(driverId, row);
@@ -120,6 +120,20 @@ function participantRows(value: unknown, context: string, drivers: Map<string, R
 
 function agree(left: ClassificationPosition | null, right: ClassificationPosition | null, context: string): void {
   if (left !== null && right !== null && (left.number !== right.number || left.text !== right.text)) throw new Error(`${context}: contradictory separate and embedded positions.`);
+}
+
+function timingRows(value: unknown, context: string, drivers: Map<string, Row>, constructors: Map<string, Row>, allowTiedPositions = false): Map<string, Row> {
+  if (value === null || (Array.isArray(value) && value.length === 0)) return new Map();
+  return participantRows(value, context, drivers, constructors, allowTiedPositions);
+}
+
+function sourceTime(row: Row, key: string) {
+  if (row[key] === null && row[`${key}Millis`] === null) return null;
+  return { text: row[key], milliseconds: row[`${key}Millis`] };
+}
+
+function qualifyingTimes(row: Row | undefined) {
+  return row ? { time: sourceTime(row, 'time'), q1: sourceTime(row, 'q1'), q2: sourceTime(row, 'q2'), q3: sourceTime(row, 'q3') } : null;
 }
 
 function prepare(raw: Row, season: number, round: number, source: ClassificationRevision['source'], revision: string) {
@@ -157,11 +171,17 @@ function prepare(raw: Row, season: number, round: number, source: Classification
   const results = participantRows(race.raceResults, 'raceResults', drivers, constructors);
   const grid = participantRows(race.startingGridPositions, 'startingGridPositions', drivers, constructors);
   const qualifying = participantRows(race.qualifyingResults, 'qualifyingResults', drivers, constructors);
-  const sprint = race.qualifyingFormat === 'SPRINT_RACE'
-    ? participantRows(race.sprintRaceResults, 'sprintRaceResults', drivers, constructors) : null;
+  const qualifying1 = timingRows(race.qualifying1Results, 'qualifying1Results', drivers, constructors);
+  const qualifying2 = timingRows(race.qualifying2Results, 'qualifying2Results', drivers, constructors);
+  const fastestLaps = timingRows(race.fastestLaps, 'fastestLaps', drivers, constructors, true);
+  const sprintQualifying = timingRows(race.sprintQualifyingResults, 'sprintQualifyingResults', drivers, constructors);
+  const sprintResults = timingRows(race.sprintRaceResults, 'sprintRaceResults', drivers, constructors);
+  const sprint = race.qualifyingFormat === 'SPRINT_RACE' ? sprintResults : null;
   // An unmatched participant is not quietly discarded or supplied from a sprint session.
-  for (const [name, entries] of [['startingGridPositions', grid], ['qualifyingResults', qualifying], ['sprintRaceResults', sprint]] as const) {
-    if (!entries) continue;
+  for (const [name, entries] of [
+    ['startingGridPositions', grid], ['qualifyingResults', qualifying], ['sprintRaceResults', sprintResults],
+    ['fastestLaps', fastestLaps], ['sprintQualifyingResults', sprintQualifying],
+  ] as const) {
     for (const [driver, row] of entries) {
       const result = results.get(driver);
       if (!result || row.constructorId !== result.constructorId) throw new Error(`${name}: unmatched driver/constructor ${driver}.`);
@@ -174,6 +194,9 @@ function prepare(raw: Row, season: number, round: number, source: Classification
     const gridRow = grid.get(driverId);
     const qualifyingRow = qualifying.get(driverId);
     const sprintRow = sprint?.get(driverId);
+    const fastestLap = fastestLaps.get(driverId);
+    if (result.fastestLap !== null && typeof result.fastestLap !== 'boolean') throw new Error(`${driverId}: malformed fastestLap source marker.`);
+    if (result.fastestLap !== null && result.fastestLap !== (fastestLap?.positionNumber === 1)) throw new Error(`${driverId}: conflicting fastestLap source marker and GP fastest-lap ranking.`);
     const embeddedGrid = sourcePosition(result, 'gridPositionNumber', 'gridPositionText', `${driverId} embedded grid`, true);
     const embeddedQualifying = sourcePosition(result, 'qualificationPositionNumber', 'qualificationPositionText', `${driverId} embedded qualifying`, true);
     const separateGrid = gridRow ? sourcePosition(gridRow, 'positionNumber', 'positionText', `${driverId} separate grid`)! : null;
@@ -205,16 +228,35 @@ function prepare(raw: Row, season: number, round: number, source: Classification
       constructorId: `f1db:constructor:${constructorId}`, constructorName: text(lookup(constructors, constructorId, 'constructor').name, 'constructor.name'),
       driverNumber: result.driverNumber, classification: sourcePosition(result, 'positionNumber', 'positionText', `${driverId} classification`),
       grid: resolvedGrid, qualifying: resolvedQualifying, laps: result.laps, points: result.points, retirementReason: result.reasonRetired,
+      timing: {
+        qualifying: qualifyingTimes(qualifyingRow),
+        raceFastestLap: fastestLap ? {
+          position: sourcePosition(fastestLap, 'positionNumber', 'positionText', `${driverId} fastest lap`),
+          lap: fastestLap.lap, time: sourceTime(fastestLap, 'time'),
+        } : null,
+      },
     };
   });
   const eventId = `f1db:race:${String(race.id)}`;
+  function numberedSession(entries: Map<string, Row>) {
+    return [...entries.values()].sort((a, b) => Number(a.positionDisplayOrder) - Number(b.positionDisplayOrder)).map((row) => ({
+      driverId: `f1db:driver:${String(row.driverId)}`, driverName: text(lookup(drivers, row.driverId, 'numbered qualifying driver').name, 'driver.name'),
+      constructorId: `f1db:constructor:${String(row.constructorId)}`, constructorName: text(lookup(constructors, row.constructorId, 'numbered qualifying constructor').name, 'constructor.name'),
+      time: sourceTime(row, 'time'),
+    }));
+  }
   const prepared = decodeClassification({
-    schemaVersion: 1, revision, cutoff: source.acquiredAt.slice(0, 10), qualification: 'local-research-unverified', source,
+    schemaVersion: 2, revision, cutoff: source.acquiredAt.slice(0, 10), qualification: 'local-research-unverified', source,
     event: {
       eventId, seasonId: `f1db:season:${season}`, season, round, date: race.date,
       name: text(race.officialName, 'race.officialName'), grandPrixId: `f1db:grand-prix:${sourceId(grandPrix.id, 'grandPrix.id')}`,
       venueId: `f1db:circuit:${sourceId(circuit.id, 'circuit.id')}`, venueName: text(circuit.name, 'circuit.name'),
       sessionId: `${eventId}:grand-prix-race`, sessionType: 'grand-prix-race', layoutSourceId: layout, layoutQualification: 'unverified',
+    },
+    timing: {
+      qualifyingFormat: race.qualifyingFormat, qualifyingSessionId: `${eventId}:grand-prix-qualifying`, validity: 'unverified',
+      sprintRaceRecorded: sprintResults.size > 0, sprintQualifyingRecorded: sprintQualifying.size > 0,
+      qualifying1: numberedSession(qualifying1), qualifying2: numberedSession(qualifying2),
     },
     definitions: [
       'All source Grand Prix raceResults are included in positionDisplayOrder; sprint results are not substituted.',
@@ -225,11 +267,15 @@ function prepare(raw: Row, season: number, round: number, source: Classification
         : 'Displayed qualifying positions refer to the separate GP qualifying session, not sprint classification.',
       'Laps are completed-lap counts; points are source Grand Prix points. Source-null laps, points, position labels and retirement reason remain unknown, not inferred zero, non-applicable or finished.',
       'The cutoff is the acquisition UTC date, not a historical archival-as-of claim.',
+      'Timing strings and milliseconds are retained together and must agree. Qualifying time is a source session/combined result; AGGREGATE and FOUR_LAPS values are not single-lap observations. Numbered qualifying sessions retain their own rosters, including replaced drivers, separately from knockout Q1/Q2/Q3.',
+      'GP fastest laps are joined by driver and constructor, checked against source rank order and the derived fastestLap marker; that marker is not independent validity evidence. Non-winners and retirees are included.',
+      'Null timing means no recorded time, not zero or proof of no valid lap. Absent timing rows and recorded zero completed laps remain distinct. Sprint timing is never substituted.',
+      'Race fastest-lap numbers retain the source index convention; that index is not assumed to be bounded by an individual driver completed-lap count. Equal fastest-lap ranks retain all tied drivers; known times for a tied rank must agree.',
     ],
     limitations: [
       'Local research only: source observations are not independently verified sporting history or release-approved analytics.',
       'Circuit layout IDs are source claims; historical geometry and layout comparability remain unverified.',
-      'Inclusive overtakes are unavailable; no fastest-lap, diversity or derived comparison metrics are inferred.',
+      'Lap validity, deletion/correction policy and eligible-driver completeness remain unverified. A source-ranked candidate is not a verified fastest-valid baseline; no speed or comparison is calculated.',
       'F1DB CC-BY-4.0 licence and attribution evidence is retained, but applicable upstream rights and public reuse remain unqualified.',
     ],
     drivers: projected,

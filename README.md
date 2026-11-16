@@ -1,6 +1,6 @@
 # F1 Field Notes
 
-A local React/TypeScript research workspace for inspecting saved Formula 1 event identities, full GP source classifications and source-qualification gaps. Unofficial, noncommercial, read-only; no accounts, trackers or upstream requests from visitors.
+A local React/TypeScript research workspace for inspecting saved Formula 1 event identities, full GP source classifications, recorded timing evidence and source-qualification gaps. Unofficial, noncommercial, read-only; no accounts, trackers or upstream requests from visitors.
 
 ## Local app-base milestone
 
@@ -40,7 +40,7 @@ Inspection appears immediately after its event row/card. It remains open only wh
 
 ## Inspect a full GP from F1DB
 
-This implements **issue #15, section 1 only**, not the analytical comparison dashboard or the remaining six sections. The existing Jolpica metadata commands remain independent.
+Implemented: **issue #15 section 1 and the recorded-evidence portion of section 2**. Section 2 remains incomplete: fastest-valid-lap qualification is blocked, and sections 3–7 are not delivered. The existing Jolpica metadata commands remain independent.
 
 ```sh
 npm run import:f1db -- 2015 1
@@ -55,6 +55,8 @@ Every attempt retains private evidence under `.local-data/f1db/<printed-id>/`: t
 
 After import, use **Reload GP classification** (or **Retry GP classification** after an error), without restarting the server. A missing metadata inventory does not prevent GP inspection, and a missing classification does not disable metadata inspection. To revisit another event or recheck the pinned source, rerun the command with its season/round. For a correction, retain and compare the prior candidate's manifest/reconciliation before accepting the new observations; source corrections are not independently verified or automatically approved for publication. A new source release requires an explicit code/schema review, not a moving download URL.
 
+The current prepared classification uses **projection schema 2**. Reimport to replace a schema-1 projection; the browser deliberately rejects the obsolete schema rather than silently presenting it without timing evidence. Previously sealed candidates remain unchanged. The GP view adds separate qualifying and race-lap tables, raw time strings with milliseconds, phase/participant coverage and explicit unknowns. Timing comes from the same pinned archive and revision as classification, not another browser request or provider.
+
 ### Source-to-field qualification
 
 Observed download: release `v2026.20.0`, published 2026-11-09; `f1db-json-single.tgz` contains `package/data/f1db.json` and schema `https://www.f1db.com/schema/v6.5.0/single/f1db.schema.json`. Acquisition is three serial HTTP downloads (archive, pinned licence, pinned README); the static release archive has no API pagination or per-visitor dependency. A network, HTTP or parsing failure stops the import without retries.
@@ -67,7 +69,9 @@ Observed download: release `v2026.20.0`, published 2026-11-09; `f1db-json-single
 | Actual grid and qualifying position | Embedded result positions checked against separate grid/qualifying rows and the declared sprint format where applicable | GP qualifying is never replaced by sprint classification; `PL` has no numbered grid position; source-null omissions remain unknown |
 | Laps and GP points | `raceResults.laps/points` | Completed-lap counts and GP points, not season totals; explicit zero retained, source-null unknown |
 | Layout label | `races.circuitLayoutId`, checked against the source circuit's layout IDs | Source claim only; historical geometry and same-layout eligibility remain unverified |
-| Timing, speeds and inclusive overtakes | Not included in this projection | Unavailable/withheld, never inferred from classification or substituted from sprints |
+| GP qualifying phases and source result time | `qualifyingResults.q1/q2/q3/time` and matching `*Millis`; separate `qualifying1Results` / `qualifying2Results` | Recorded observations, validity unverified; numbered sessions are not knockout Q1/Q2; AGGREGATE and FOUR_LAPS result times are not single laps |
+| GP per-driver fastest laps | `fastestLaps.positionNumber/positionText/lap/time/timeMillis`, joined to GP driver/constructor identities | Includes non-winners and retirees; source-ranked candidate only, not a verified fastest-valid baseline |
+| Speeds and inclusive overtakes | Not calculated | Unavailable/withheld, never inferred from classification or substituted from sprints |
 
 The acquisition cutoff is the UTC download date, not an archival-as-of claim. The browser receives one coherent revision with definitions, units, limitations and source hashes; it rejects malformed replacement projections through the same decoder as the importer. It never receives the raw archive or private candidate files.
 
@@ -76,6 +80,33 @@ The acquisition cutoff is the UTC download date, not an archival-as-of claim. Th
 Actual-source proof: `npm run import:f1db -- 2015 1` imported 20 Australian GP result entries and reconciled 17 actual-grid and 18 qualifying rows. The original archive SHA-256 is `ca32fd3b1f2a82ab7f23d977b8ea34419c4734d61787f61cbeae82c07ffe24c8`; all nine retained evidence hashes were checked. `npm run import:f1db -- 2021 10` also imported a real sprint-format British GP with 20 entries; browser inspection confirmed its sprint-derived grid and separate GP qualifying positions remain distinct. Actual UI checks covered retirement reasons, recorded zero laps, source-null points, DNS/DNP omissions, desktop/mobile and both themes, keyboard reload/focus and narrow provenance. Raw-archive access was denied, metadata remained usable, and the production browser made no local-data requests or displayed source rows. These are real local-research checks, not a complete historical audit; candidates and screenshots remain local.
 
 **Still blocked:** issue #15 sections 2–7, qualified publication under #3/#4, historical layout/length verification, inclusive overtaking history, source-combination/reuse clearance and the three-season analytical handoff. No chart, verified speed, complete-history or public-launch claim is made here.
+
+### Recorded timing evidence and the remaining validity gate
+
+```sh
+npm run import:f1db -- 2021 10
+# Reload GP classification: GP Q1/Q2/Q3 and per-driver race laps, separate from the sprint.
+npm run import:f1db -- 2005 3
+# Reload: historical AGGREGATE result plus its separate numbered qualifying sessions.
+```
+
+Source timing fields are present in the pinned F1DB archive. The real British GP contains Q1/Q2/Q3 times for 20/15/10 drivers and 19 per-driver fastest-lap rows among 20 GP classifications. The absent driver has a recorded zero completed laps; that is shown alongside the absent row, not converted into a zero-time lap or a verified absence reason. The non-winner source-ranked candidate and the winner's different lap remain inspectable. For the real 2005 Bahrain GP, the combined qualifying result is shown separately from `qualifying1Results` and `qualifying2Results`; it is never treated as a single lap or relabelled Q1/Q2. Other non-phase formats retain source result times; unknown/null phase times do not prove elimination or invalidity.
+
+Import validation also rejects unknown/duplicate timing identities, contradictory same-session constructor links, mismatched time text/milliseconds, nonpositive recorded durations and inconsistent fastest-lap ranks/markers. Seconds-only, minute-prefixed and hour-prefixed durations retain their exact source strings. Equal fastest-lap ranks retain every tied driver; known times for the same rank must agree. Source race-lap indices are not assumed to be bounded by an individual driver's completed-lap count. The source marker is derived from the rank, not independent verification. Missing timing rows and source-null times/lap numbers remain inspectable gaps; positive or unknown completed-lap drivers without lap rows are counted explicitly. Conflicting observations stop the import, retaining rejection evidence and the previous revision. No provider is silently preferred or averaged.
+
+**Why no new Jolpica timing path:** the sampled F1DB events already supply the required recorded fields, and redundant requests would not resolve validity. The pinned [F1DB reader](https://github.com/f1db/f1db/blob/v2026.20.0/build-logic/src/main/kotlin/com/f1db/plugin/reader/F1DBReader.kt), [qualifying converter](https://github.com/f1db/f1db/blob/v2026.20.0/build-logic/src/main/kotlin/com/f1db/plugin/reader/databind/QualifyingResultConverter.kt), [fastest-lap converter](https://github.com/f1db/f1db/blob/v2026.20.0/build-logic/src/main/kotlin/com/f1db/plugin/reader/databind/FastestLapConverter.kt) and retained schema establish recorded fields, not a complete deleted-lap/correction/eligibility policy. The [official British fastest-laps table](https://www.formula1.com/en/results/2021/races/1072/great-britain/fastest-laps) corroborates the source ranking; this inspection is not a retained independent validity audit.
+
+Jolpica's [results](https://github.com/jolpica/jolpica-f1/blob/main/docs/endpoints/results.md), [qualifying](https://github.com/jolpica/jolpica-f1/blob/main/docs/endpoints/qualifying.md) and [laps](https://github.com/jolpica/jolpica-f1/blob/main/docs/endpoints/laps.md) responses do not expose complete race-lap deletion/validity evidence. At inspected source revision [`0fdc5a2`](https://github.com/jolpica/jolpica-f1/blob/0fdc5a2584d6aae670d7b7b0188542493de2e437/jolpica_api/ergastapi/views.py), qualifying excludes deleted laps, but the GP fastest-lap query does not apply that filter. This is not proof that a particular recorded lap is invalid; its validity is **unverified**.
+
+If a later demonstrated field gap warrants Jolpica, its [access documentation](https://github.com/jolpica/jolpica-f1/blob/main/docs/README.md) requires a versioned identifying User-Agent; [published unauthenticated limits](https://github.com/jolpica/jolpica-f1/blob/main/docs/rate_limits.md) are currently 4 requests/second and 500/hour, shared by IP. A new timing importer must retain original bytes, request identities, times, hashes and [terms](https://github.com/jolpica/jolpica-f1/blob/main/TERMS.md), complete nested-result pagination, and explicit cross-source/session reconciliation. No atomic multi-page snapshot is documented: stable totals alone cannot prove that data did not change. That importer and its pagination regressions are **not implemented here**; the static F1DB artifact has no pages, and the existing metadata-only acquisition is not a timing substitute.
+
+**To unblock a fastest-valid baseline:** retain authoritative final timing and correction/deletion/eligibility evidence for the selected event, account for every eligible participant or omission, and resolve conflicting observations. Until then the browser always says **Fastest-valid baseline withheld**. No fastest-valid time, lap-average speed or analytical comparison is claimed. This explicitly approved recorded-evidence delivery does not complete section 2 or unblock section 3.
+
+New runtime proof used actual acquisition → schema-2 preparation → browser inspection for British 2021 and Bahrain 2005. The British view was inspected at 1440px and 390px in both themes, with Q1–Q3, non-winner lap evidence, absent/zero-lap disposition, source references and keyboard reload/focus; no horizontal overflow or uncaught browser errors was observed. The Bahrain narrow view exposed combined and numbered sessions separately. An attempted 2005 Australian import rejected Kimi Räikkönen's conflicting embedded pit-lane versus separate numbered grid observations and preserved the prior British revision; that source conflict remains unresolved, not patched by preference. Deterministic real-CLI regressions cover timing contradictions, partial coverage, GP/sprint isolation, aggregate-session separation and prior-file preservation; browser regressions cover phase/lap interpretation and rejection of contradictory timing replacements. These checks are not historical or rights clearance.
+
+The schema-2 2015 Australian import/browser path was also exercised: 18 qualifying rows, 13 per-driver lap rows, a timed retiree, and DNS/DNP source-null omissions remained distinct. All nine retained evidence hashes matched for each of the three successful candidates; each archive matched the pinned SHA-256 above.
+
+Review corrections were exercised through the actual command and browser: 2020 Sakhir's seconds-only qualifying/race times, 2025 Japan's source lap index exceeding a driver's completed-lap count, 1959 Britain's tied fastest-lap candidates, and 2003 Hungary's first-qualifying participant replaced before the GP. Numbered qualifying sessions have independent prepared rosters and tables, with source driver/constructor IDs; they do not invent GP participation for a replaced driver. CLI regressions failed before these corrections and passed afterward. Unknown sporting validity remains unknown even when a duration parses or a source rank is consistent.
 
 ## Refresh source observations locally
 

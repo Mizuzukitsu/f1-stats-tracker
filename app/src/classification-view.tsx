@@ -3,6 +3,7 @@ import {
   decodeClassification,
   type ClassificationPosition,
   type ClassificationRevision,
+  type RecordedTime,
 } from './classification';
 
 type LoadState =
@@ -12,6 +13,90 @@ type LoadState =
 
 function Position({ position }: { position: ClassificationPosition }) {
   return <strong>{position.text ?? 'Unknown (source null)'}</strong>;
+}
+
+function TimeEvidence({ time, missing = 'No recorded time' }: { time: RecordedTime | null; missing?: string }) {
+  return time === null ? <span>{missing}</span> : <><strong>{time.text}</strong><span className="classification-subtext">{time.milliseconds} ms</span></>;
+}
+
+function TimingEvidence({ classification }: { classification: ClassificationRevision }) {
+  const { drivers, event, timing } = classification;
+  const phased = ['KNOCKOUT', 'ELIMINATION', 'SPRINT_RACE'].includes(timing.qualifyingFormat);
+  const qualifyingRows = drivers.filter((driver) => driver.timing.qualifying !== null);
+  const lapRows = drivers.filter((driver) => driver.timing.raceFastestLap !== null);
+  const timedLaps = lapRows.filter((driver) => driver.timing.raceFastestLap?.time !== null);
+  const missing = drivers.filter((driver) => driver.timing.raceFastestLap === null);
+  const unresolved = missing.filter((driver) => driver.laps === null || driver.laps > 0);
+  const candidates = drivers.filter((driver) => driver.timing.raceFastestLap?.position.number === 1);
+  return (
+    <section className="timing-evidence" aria-labelledby="timing-title">
+      <h3 id="timing-title">GP timing evidence</h3>
+      <p className="classification-notes">Recorded source observations, not independently validated laps. Format: <strong>{timing.qualifyingFormat}</strong>. Null is not zero, elimination or proof of no valid lap.</p>
+      <dl className="detail-identities">
+        <div><dt>GP qualifying session</dt><dd><code>{timing.qualifyingSessionId}</code></dd></div>
+        <div><dt>GP race session</dt><dd><code>{event.sessionId}</code></dd></div>
+        <div><dt>Qualifying coverage</dt><dd>{qualifyingRows.length} source rows / {drivers.length} GP classifications.<br />{(['q1', 'q2', 'q3'] as const).map((phase) => `${phase.toUpperCase()}: ${qualifyingRows.filter((driver) => driver.timing.qualifying![phase] !== null).length} timed`).join(' · ')}</dd></div>
+        <div><dt>Race lap coverage</dt><dd>{lapRows.length} source rows; {timedLaps.length} recorded times / {drivers.length} GP classifications.<br />{missing.length} absent rows: {missing.length - unresolved.length} with recorded zero completed laps; {unresolved.length} with positive or unknown completed laps. Absence reasons remain unverified.</dd></div>
+      </dl>
+      <p className="classification-notes">{phased ? 'Q1–Q3 are separate source phases; a missing phase time does not establish why it is absent.' : 'Q1–Q3 are not applicable to this source format; the source result time is retained separately.'} Source result time can be a combined AGGREGATE or FOUR_LAPS result, not a single lap. Numbered qualifying sessions are not knockout phases.</p>
+      <div className="table-container classification-table timing-table">
+        <table role="table" aria-label="GP qualifying timing evidence">
+          <thead role="rowgroup"><tr role="row">
+            {['Driver / Constructor', 'Q1', 'Q2', 'Q3', 'Source result time'].map((label) => <th key={label} scope="col" role="columnheader">{label}</th>)}
+          </tr></thead>
+          <tbody role="rowgroup">{drivers.map((driver) => (
+            <tr key={driver.driverId} role="row">
+              <td role="cell" data-label="Driver / Constructor" className="classification-driver"><strong>{driver.driverName}</strong><span>{driver.constructorName}</span></td>
+              {(['q1', 'q2', 'q3', 'time'] as const).map((phase) => (
+                <td key={phase} role="cell" data-label={phase === 'time' ? 'Source result time' : phase.toUpperCase()}>
+                  <TimeEvidence time={driver.timing.qualifying?.[phase] ?? null} missing={driver.timing.qualifying === null ? 'No GP qualifying row' : phase !== 'time' && !phased ? 'Not applicable to source format' : 'No recorded time'} />
+                </td>
+              ))}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      {(['qualifying1', 'qualifying2'] as const).map((session, index) => (
+        <div key={session}>
+          <h4 className="classification-subheading">GP qualifying session {index + 1}</h4>
+          <p className="classification-notes"><code>{timing.qualifyingSessionId}-{index + 1}</code> · {timing[session].length} source session participants. Independent roster; a participant need not appear in the GP race. {timing[session].length === 0 && 'No source records; applicability not inferred.'}</p>
+          {timing[session].length > 0 && <div className="table-container classification-table timing-table">
+            <table role="table" aria-label={`GP qualifying session ${index + 1} timing evidence`}>
+              <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Driver / Constructor</th><th scope="col" role="columnheader">Recorded session time</th></tr></thead>
+              <tbody role="rowgroup">{timing[session].map((participant) => (
+                <tr key={participant.driverId} role="row">
+                  <td role="cell" data-label="Driver / Constructor" className="classification-driver"><strong>{participant.driverName}</strong><code>{participant.driverId}</code><span>{participant.constructorName}</span><code>{participant.constructorId}</code></td>
+                  <td role="cell" data-label="Recorded session time"><TimeEvidence time={participant.time} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>}
+        </div>
+      ))}
+      <h4 className="classification-subheading">{candidates.length > 0 ? `Source-ranked candidate${candidates.length > 1 ? 's' : ''}: ${candidates.map((driver) => driver.driverName).join(', ')}` : 'No source-ranked fastest-lap candidate'}</h4>
+      <p className="classification-notes"><strong>Fastest-valid baseline withheld</strong>. Validity, deletion/correction treatment and eligible-driver completeness are unverified. Source lap indices are not assumed to equal an individual driver's completed-lap count. A source rank, fastest-lap marker or numeric classification is not validity clearance; retired drivers are not automatically excluded.</p>
+      <div className="table-container classification-table timing-table">
+        <table role="table" aria-label="GP race fastest-lap evidence">
+          <thead role="rowgroup"><tr role="row">
+            {['Driver / Constructor', 'Source lap rank', 'GP lap number', 'Recorded lap time', 'Coverage / disposition'].map((label) => <th key={label} scope="col" role="columnheader">{label}</th>)}
+          </tr></thead>
+          <tbody role="rowgroup">{drivers.map((driver) => {
+            const lap = driver.timing.raceFastestLap;
+            return <tr key={driver.driverId} role="row">
+              <td role="cell" data-label="Driver / Constructor" className="classification-driver"><strong>{driver.driverName}</strong><span>{driver.constructorName}</span></td>
+              <td role="cell" data-label="Source lap rank">{lap ? <Position position={lap.position} /> : 'No source fastest-lap row'}</td>
+              <td role="cell" data-label="GP lap number">{lap?.lap ?? 'Unknown'}</td>
+              <td role="cell" data-label="Recorded lap time"><TimeEvidence time={lap?.time ?? null} /></td>
+              <td role="cell" data-label="Coverage / disposition">{lap ? 'Recorded · validity unverified' : 'Absent · reason unverified'}<span className="classification-subtext">Completed laps: {driver.laps ?? 'Unknown'} · Result: {driver.classification.text}</span></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <p className="classification-notes">{timing.sprintRaceRecorded ? 'Sprint race: recorded separately; not substituted.' : 'Sprint race: no source records; applicability not inferred.'}</p>
+      <p className="classification-notes">{timing.sprintQualifyingRecorded ? 'Sprint qualifying: recorded separately; not substituted.' : 'Sprint qualifying: no source records; applicability not inferred.'}</p>
+      <p className="classification-notes">Source fields: <code>races[id={event.eventId.slice('f1db:race:'.length)}].qualifyingResults / qualifying1Results / qualifying2Results / fastestLaps</code>. Same-source identity, time and rank checks passed; conflicting imports are rejected, not resolved by preference. No Jolpica timing is combined. See the pinned archive, acquisition time, hashes and attribution below; raw evidence remains private.</p>
+    </section>
+  );
 }
 
 export function ClassificationWorkspace() {
@@ -140,9 +225,10 @@ function ClassificationRecord({ classification }: { classification: Classificati
           ))}</tbody>
         </table>
       </div>
+      <TimingEvidence classification={classification} />
       <div className="evidence-grid classification-evidence">
         <div><span className="evidence-label">Inclusive overtakes</span><strong>Withheld · unverified</strong><p>Grid and classification differences are not on-track pass counts.</p></div>
-        <div><span className="evidence-label">Lap times / speeds</span><strong>Unavailable in this projection</strong><p>Source lap counts are not lap times or speed observations.</p></div>
+        <div><span className="evidence-label">Lap-average speeds</span><strong>Unavailable · evidence gated</strong><p>Recorded timings do not establish valid laps or historical layout distance.</p></div>
         <div><span className="evidence-label">Historical layout / public reuse</span><strong>Unqualified</strong><p>A source layout label and source licence do not establish historical geometry or publication clearance.</p></div>
       </div>
       <details className="limitations" open>

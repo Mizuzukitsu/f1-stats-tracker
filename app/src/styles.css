@@ -220,6 +220,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .classification-evidence { margin-top: 24px; }
 .classification-subheading { margin-top: 16px; font-size: 12px; font-weight: 600; }
 .classification-provenance .detail-identities { margin-top: 0; border-top: 0; padding-block: 20px 0; }
+.timing-evidence { margin-top: 32px; }
+.timing-evidence > h3 { font-size: 20px; margin-bottom: 12px; }
+.timing-evidence .classification-subheading { margin-bottom: 12px; }
+.timing-table { margin-bottom: 20px; }
+.timing-table th:nth-child(n) { width: auto; }
+.timing-table th:first-child { width: 26%; }
 
 @media (max-width: 1050px) {
   .classification-table th, .classification-table td { padding-inline: 7px; }
